@@ -1,101 +1,173 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from 'react';
+import Image from 'next/image';
+
+interface AnalysisResult {
+ animal: string;
+ confidence: number;
+ analysis: string;
+ wikipediaUrl: string;
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+ const [selectedImage, setSelectedImage] = useState<File | null>(null);
+ const [imageUrl, setImageUrl] = useState<string>('');
+ const [loading, setLoading] = useState<boolean>(false);
+ const [result, setResult] = useState<AnalysisResult | null>(null);
+ const [error, setError] = useState<string>('');
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+ const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+   const file = e.target.files?.[0];
+   
+   if (!file) return;
+   
+   if (!file.type.includes('jpeg') && !file.type.includes('jpg')) {
+     setError('Please upload only JPG/JPEG images');
+     return;
+   }
+   
+   setSelectedImage(file);
+   setImageUrl(URL.createObjectURL(file));
+   setError('');
+ };
+
+ const handleUpload = async () => {
+   if (!selectedImage) return;
+   
+   // Clear previous results
+   setResult(null);
+   setLoading(true);
+   setError('');
+   
+   try {
+     // Convert image to base64
+     const reader = new FileReader();
+     reader.readAsDataURL(selectedImage);
+     
+     reader.onloadend = async () => {
+       try {
+         // First classify the image
+         const classifyRes = await fetch('/api/classify', {
+           method: 'POST',
+           headers: {
+             'Content-Type': 'application/json',
+           },
+           body: JSON.stringify({ image: reader.result }),
+         });
+         
+         const classifyData = await classifyRes.json();
+         console.log('Classify response data:', classifyData);
+         
+         if (!classifyData.animal) {
+           setError('No supported animal detected in the image');
+           setLoading(false);
+           return;
+         }
+         
+         // Then analyze if dangerous
+         const analyzeRes = await fetch('/api/analyze', {
+           method: 'POST',
+           headers: {
+             'Content-Type': 'application/json',
+           },
+           body: JSON.stringify({ animal: classifyData.animal }),
+         });
+         
+         const analyzeData = await analyzeRes.json();
+         console.log('Analyze response data:', analyzeData);
+         
+         setResult({
+           animal: classifyData.animal,
+           confidence: classifyData.confidence,
+           analysis: analyzeData.analysis,
+           wikipediaUrl: analyzeData.wikipediaUrl
+         });
+       } catch (err) {
+         setError('An error occurred while processing the image');
+         console.error(err);
+       }
+       setLoading(false);
+     };
+   } catch (err) {
+     setError('An error occurred while reading the image');
+     setLoading(false);
+   }
+ };
+
+ return (
+   <div className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+     <div className="max-w-md mx-auto bg-white rounded-lg shadow-xl p-8">
+       <h1 className="text-2xl font-bold mb-8 text-center">
+         Animal Identifier
+       </h1>
+       
+       <div className="space-y-6">
+         <div>
+           <label className="block text-sm font-medium text-gray-700">
+             Upload Animal Image (JPG/JPEG only)
+           </label>
+           <input
+             type="file"
+             accept=".jpg,.jpeg"
+             onChange={handleImageChange}
+             className="mt-1 block w-full"
+           />
+         </div>
+         
+         {imageUrl && (
+           <div className="relative h-64 w-full">
+             <Image
+               src={imageUrl}
+               alt="Preview"
+               fill
+               className="object-contain"
+               unoptimized
+             />
+           </div>
+         )}
+         
+         <button
+           onClick={handleUpload}
+           disabled={!selectedImage || loading}
+           className="w-full bg-blue-500 text-white py-2 px-4 rounded-md
+                    hover:bg-blue-600 disabled:bg-gray-400"
+         >
+           {loading ? 'Processing...' : 'Analyze Image'}
+         </button>
+         
+         {error && (
+           <div className="text-red-500 text-sm">
+             {error}
+           </div>
+         )}
+         
+         {result && (
+           <div className="space-y-4">
+             <div className="border-t pt-4">
+               <h2 className="font-semibold">Results:</h2>
+               <p>Detected Animal: {result.animal}</p>
+               <p>Confidence: {(result.confidence * 100).toFixed(2)}%</p>
+               <div className="mt-2">
+                 <p>{result.analysis}</p>
+                 {result.wikipediaUrl && (
+                   <p className="mt-4">
+                     <a 
+                       href={result.wikipediaUrl}
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       className="text-blue-600 hover:text-blue-800 underline"
+                     >
+                       Read more on Wikipedia →
+                     </a>
+                   </p>
+                 )}
+               </div>
+             </div>
+           </div>
+         )}
+       </div>
+     </div>
+   </div>
+ );
 }
